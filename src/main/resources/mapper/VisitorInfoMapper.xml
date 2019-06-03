@@ -17,6 +17,7 @@
     <result column="create_time" jdbcType="TIMESTAMP" property="createTime" />
     <result column="update_time" jdbcType="TIMESTAMP" property="updateTime" />
     <result column="staff_id" jdbcType="VARCHAR" property="staffId" />
+    <result column="visitor_id" jdbcType="VARCHAR" property="visitorId" />
     <result column="photo_data" jdbcType="LONGVARCHAR" property="photoData" />
     <result column="floor" jdbcType="LONGVARCHAR" property="floor" />
   </resultMap>

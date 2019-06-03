@@ -34,6 +34,8 @@ public class VisitorService {
     @Value("${park_base_url}")
     private String PARK_BASE_URL;
 
+    @Value("${smg_base_url}")
+    private String SMG_BASE_URL;
     @Autowired
     private RestTemplate restTemplate;
     private SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
@@ -47,6 +49,8 @@ public class VisitorService {
     @Resource
     DeviceService deviceService;
 
+    @Value("${time_stamp_before}")
+    Long TIME_STAMP_BEFORE;
     /**
      * Token
      */
@@ -117,50 +121,70 @@ public class VisitorService {
         return visitorList;
     }
 
-    @Scheduled(initialDelay = 5000, fixedRate = 1000 * 60)
+    /**
+     * 去除重复数据
+     * @param a 集合
+     * @param b 集合
+     * @return 返回合并后去除重复数据
+     */
+    private List removeRetain(List a,List b){
+        List c=new ArrayList();
+        c.addAll(a);
+        c.addAll(b);
+        c=new ArrayList(new LinkedHashSet(c));
+        return c;
+
+    }
+
+
+    @Scheduled(initialDelay = 5000, fixedRate = 1000 * 10)
     public void sendTag() {
         Date now = new Date();
         Condition condition = new Condition(VisitorInfo.class);
-        condition.createCriteria().andEqualTo("status", 0);
+        //查询数据库中小于或等于现在时间加上配置时间的邀请函
+        condition.createCriteria().andEqualTo("status", 0).andGreaterThanOrEqualTo("visitStartTime",now.getTime()-TIME_STAMP_BEFORE);
         List<VisitorInfo> visitorInfo = visitorInfoService.findByCondition(condition);
+        //用来临时存储查询到的数据
+        List<VisitorInfo> visitorAutos=new ArrayList<>();
         //模板
         List listInfo = new ArrayList();
         for (int i = 0; i < visitorInfo.size(); i++) {
-
-
-            Date date = visitorInfo.get(i).getVisitStartTime();
             //创建Visitor模板
             Visitor visitor = new Visitor();
             //查询所有时间小于1小时的数据
-            if (date.getTime() - now.getTime() < 3600000 && date.getTime() - now.getTime() > 0) {
                 //将查询到的标签插入到visitor模板中
                 List<Policy> policy = policyService.getAllPolicy();
-                for (Policy policyInfo :
-                        policy) {
-                    if (visitorInfo.get(i).getFloor().equals(policyInfo.getName())) {
-                        //添加标签
-                        visitor.setTag_id_list(policyInfo.getTag_id_list());
-                        Map map=new HashMap();
-                        map.put("deviceId",policyInfo.getDevice_id_list());
-                        visitor.setMeta(map);
-                        break;
+                String[] floors=visitorInfo.get(i).getFloor().split(",");
+                List<String> devices=new ArrayList<>();
+                List<String> taglist=new ArrayList<>();
+                for (String floor:
+                floors) {
+                    for (Policy policyInfo :
+                            policy) {
+                        if (floor.equals(policyInfo.getName())) {
+                            taglist=removeRetain(taglist,policyInfo.getTag_id_list());
+                            devices=removeRetain(devices,policyInfo.getDevice_id_list());
+                            break;
+                        }
                     }
                 }
+                //添加标签
+                visitor.setTag_id_list(taglist);
+                Map mapDevice=new HashMap();
+                mapDevice.put("deviceId",devices);
+                mapDevice.put("staffId",visitorInfo.get(i).getStaffId());
+                visitor.setMeta(mapDevice);
                 //创建园区访客人员信息模板
                 PersonInformation personInformation = new PersonInformation();
 
-                //添加卡号，用于辨别是否为唯一
-                List<String> staffId=new ArrayList<>();
-                staffId.add(visitorInfo.get(i).getStaffId());
-                visitor.setCard_numbers(staffId);
                 visitor.setFace_image_content(visitorInfo.get(i).getPhotoData());
                 personInformation.setName(visitorInfo.get(i).getVisitorName());
-                personInformation.setCheck_out_timestamp(visitorInfo.get(i).getVisitEndTime().getTime());
+                personInformation.setCheck_out_timestamp(visitorInfo.get(i).getVisitEndTime().getTime()/1000);
                 personInformation.setCompany(visitorInfo.get(i).getCompany());
                 personInformation.setPhone(visitorInfo.get(i).getPhone());
                 personInformation.setVisit_purpose("0");
-                personInformation.setVisit_start_timestamp(visitorInfo.get(i).getVisitStartTime().getTime());
-                personInformation.setVisit_end_timestamp(visitorInfo.get(i).getVisitEndTime().getTime());
+                personInformation.setVisit_start_timestamp(visitorInfo.get(i).getVisitStartTime().getTime()/1000);
+                personInformation.setVisit_end_timestamp(visitorInfo.get(i).getVisitEndTime().getTime()/1000);
                 personInformation.setVisit_time_type("0");
                 personInformation.setVisitee_name(visitorInfo.get(i).getVisiteeName());
                 visitor.setPerson_information(personInformation);
@@ -169,9 +193,7 @@ public class VisitorService {
                 VisitorInfo visitorAuto=visitorInfo.get(i);
                 visitorAuto.setStatus(3);
                 visitorAuto.setUpdateTime(new Date());
-                visitorInfoService.update(visitorAuto);
-            }
-
+                visitorAutos.add(visitorAuto);
         }
         Map<String, List> map = new HashMap<>();
         map.put("visitor_list", listInfo);
@@ -181,23 +203,101 @@ public class VisitorService {
         headers.add(HttpHeaders.AUTHORIZATION, tokenService.getToken());
         if (listInfo.size()>0) {
             HttpEntity httpEntity = new HttpEntity<>(JSON.toJSONString(map), headers);
-            ResponseEntity<String> responseEntity = restTemplate.postForEntity(PARK_BASE_URL + "/visitors", httpEntity, String.class);
-            if (responseEntity.getStatusCode() == HttpStatus.OK) {
-
-                String body = responseEntity.getBody();
-                ResponseModel responseModel = JSONObject.parseObject(body, ResponseModel.class);
-
+            try{
+                ResponseEntity<String> responseEntity = restTemplate.postForEntity(PARK_BASE_URL + "/visitors", httpEntity, String.class);
+                logger.info(responseEntity.getBody());
+                if (responseEntity.getStatusCode() == HttpStatus.OK) {
+                    String body = responseEntity.getBody();
+                    ResponseModel responseModel = JSONObject.parseObject(body, ResponseModel.class);
+                    List<ResponseModel> responseMode2 = JSONObject.parseArray(responseModel.getResult(), ResponseModel.class);
+                    for (int i=0;i<responseMode2.size();i++
+                    ) {
+                    Visitor visitor= JSONObject.parseObject(responseMode2.get(i).getResult(),Visitor.class);
+                    //添加到园区后，staffId用于存储访客唯一id
+                        VisitorInfo visitorInfo1= visitorAutos.get(i);
+                        visitorInfo1.setVisitorId(visitor.getVisitor_id());
+                        visitorInfoService.update(visitorInfo1);
+                    }
+                }
+            }catch (Exception ex){
+                logger.error(ex.getMessage());
+                for (VisitorInfo visitorAuto:
+                visitorAutos) {
+                    visitorInfoService.update(visitorAuto);
+                }
             }
         }
     }
+    @Scheduled(initialDelay = 1000, fixedRate = 1000 * 10)
+    public void chekOut(){
+        Condition condition = new Condition(VisitorInfo.class);
+        //获取数据库中所有状态等于3并且小于现在时间的邀请函
+        condition.createCriteria().andEqualTo("status", 3).andLessThanOrEqualTo("visitEndTime",new Date());
+        List<VisitorInfo> visitorInfos= visitorInfoService.findByCondition(condition);
+        for (int i=0; i<visitorInfos.size();
+                i++) {
+            HttpHeaders headers = new HttpHeaders();
+            headers.add(HttpHeaders.CONTENT_TYPE, "application/json");
+            headers.add(HttpHeaders.AUTHORIZATION, tokenService.getToken());
+            HttpEntity httpEntity = new HttpEntity<>(headers);
+            ResponseEntity<String> responseEntity = restTemplate.exchange(PARK_BASE_URL + "/visitors/checkout/"+visitorInfos.get(i).getVisitorId(), HttpMethod.DELETE,httpEntity, String.class);
+            logger.info(responseEntity.getBody());
+            ResponseModel responseModelOut=JSON.parseObject(responseEntity.getBody(),ResponseModel.class);
+            Visitor visitorOut=JSON.parseObject(responseModelOut.getResult(),Visitor.class);
+            VisitorInfo visitorInfo=visitorInfos.get(0);
+            visitorInfo.setStatus(4);
+            visitorInfoService.update(visitorInfo);
 
-    @Scheduled(initialDelay = 1000, fixedRate = 1000 * 2)
-    public void querySignInVisitorTime() {
-        Date date = new Date();
-        Long endTime = date.getTime()/1000;
-        date.setTime(date.getTime() - 2 * 1000);
-        Long startTime = date.getTime()/1000;
-        querySignInVisitor(startTime, endTime);
+
+            /*HashMap<String, Object> postParameters = new HashMap<>();
+            ///考勤记录查询开始时间
+            postParameters.put("start_timestamp", visitorInfo.getVisitStartTime());
+            ///考勤记录查询结束时间
+            postParameters.put("end_timestamp", visitorInfo.getVisitEndTime());
+            postParameters.put("fuzzy_name",visitorInfo.getVisitorName());
+            HttpHeaders headers2 = new HttpHeaders();
+            headers2.add(HttpHeaders.CONTENT_TYPE, "application/json");
+            headers2.add(HttpHeaders.AUTHORIZATION, token);
+
+            HttpEntity httpEntity2 = new HttpEntity<>(JSON.toJSONString(postParameters), headers2);
+            try {
+                ResponseEntity<String> responseEntity2 = restTemplate.postForEntity(PARK_BASE_URL + "/access/record", httpEntity2, String.class);
+                String body = responseEntity2.getBody();
+                ResponseModel responseModel= JSON.parseObject(body,ResponseModel.class);
+                if (responseModel.getRtn()==0){
+                    List<AccessRecord> visitRecord=JSON.parseArray(responseModel.getResult(),AccessRecord.class);
+                    for (AccessRecord accessRecord: visitRecord){
+                        AccessVisitor accessVisitor=new AccessVisitor();
+                        accessVisitor.setId(accessRecord.getPerson().getMeta().get("staffId").toString());
+
+                        *//**
+                         * 遍历所有对应Device的设备,获取地址
+                         *//*
+                        for (Device device:
+                                deviceService.getAllDevice()) {
+                            if(device.getDevice_id().equals(accessRecord.getDevice_id())) {
+                                accessVisitor.setAddress(device.getDevice_meta().getLocation());
+                                break;
+                            }
+                        }
+                        accessVisitor.setDate((long)accessRecord.getTimestamp()*1000);
+                        accessVisitor.setPhone(accessRecord.getPerson().getPerson_information().getPhone());
+                        accessVisitor.setName(accessRecord.getPerson().getPerson_information().getName());
+                        //推送消息
+                        HttpHeaders headers3 = new HttpHeaders();
+                        headers3.add(HttpHeaders.CONTENT_TYPE, "application/json");
+                        HttpEntity httpEntity3 = new HttpEntity<>(JSON.toJSONString(accessVisitor), headers3);
+                        ResponseEntity<String> responseEntity3 = restTemplate.postForEntity(SMG_BASE_URL, httpEntity3, String.class);
+                        String body2= responseEntity.getBody();
+                        logger.warn(body2);
+                    }
+
+                }
+            }catch (Exception ex){
+                ex.printStackTrace();
+                logger.error(ex.getMessage());
+            }*/
+        }
     }
 
 
@@ -205,7 +305,7 @@ public class VisitorService {
      * @param startTime 开始时间
      * @param endTime   结束时间
      * @return 返回设备名等指数
-     */
+     *//*
     public void querySignInVisitor(Long startTime, Long endTime) {
         if (visitorList != null) {
             visitorList.clear();
@@ -256,31 +356,30 @@ public class VisitorService {
         }
     }
 
-    /**
+    *//**
      *
      * @param visitRecord 所有通行记录
      * @return
-     */
+     *//*
     private List<AccessVisitor> recond(List<AccessRecord> visitRecord) {
         List<AccessVisitor> accessVisitors=new ArrayList<>();
-        /**
+        *//**
          * 遍历所有通行记录
-         */
+         *//*
         for (AccessRecord visitRecordInfo :
                 visitRecord) {
             AccessVisitor accessVisitor=new AccessVisitor();
 
-            boolean status=false;
-            for (String info:
-                    (List<String>)visitRecordInfo.getPerson().getMeta().get("deviceId")) {
+            boolean status=true;
+            for (String info:(List<String>)visitRecordInfo.getPerson().getMeta().get("deviceId")) {
                 if(info.equals(visitRecordInfo.getDevice_id())){
-                    status=true;
+                    status=false;
                     break;
                 }
             }
-            /**
+            *//**
              * 遍历所有对应Device的设备
-             */
+             *//*
             for (Device device:
             deviceService.getAllDevice()) {
                 if(device.getDevice_id().equals(visitRecordInfo.getDevice_id())) {
@@ -292,24 +391,26 @@ public class VisitorService {
 
 
                 //将时间戳转化为时间格式
-                accessVisitor.setDate(new Date().getTime()/1000);
+                accessVisitor.setDate(new Date().getTime());
 
-            accessVisitor.setId(visitRecordInfo.getPerson().getCard_numbers().get(0));
+            accessVisitor.setId(visitRecordInfo.getPerson().getMeta().get("staffId").toString());
 
 
             if (status){
+                logger.warn("accessVisitor  id"+accessVisitor.getId()+"\tname"+accessVisitor.getName()+"\taddress"+accessVisitor.getAddress());
                 accessVisitor.setName(visitRecordInfo.getPerson().getPerson_information().getName());
                 accessVisitor.setPhone(visitRecordInfo.getPerson().getPerson_information().getPhone());
                 HttpHeaders headers = new HttpHeaders();
                 headers.add(HttpHeaders.CONTENT_TYPE, "application/json");
                 HttpEntity httpEntity = new HttpEntity<>(JSON.toJSONString(accessVisitor), headers);
-                ResponseEntity<String> responseEntity = restTemplate.postForEntity("https://guard-test.smgtech.net/index.php?r=api/third/get", httpEntity, String.class);
+                ResponseEntity<String> responseEntity = restTemplate.postForEntity(SMG_BASE_URL, httpEntity, String.class);
                 String body= responseEntity.getBody();
+                logger.warn(body);
             }
         }
 
         return accessVisitors;
-    }
+    }*/
 
     /**
      * 首先进行入参检查防止出现空指针异常

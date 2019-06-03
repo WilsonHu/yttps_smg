@@ -75,6 +75,7 @@ public class PolicyService {
                     }
                 } catch (HttpClientErrorException errorException) {
                     if (errorException.getStatusCode().value() == ResponseCode.TOKEN_INVALID) {
+                        token = tokenService.getToken();
                         fetchPolicy();
                     }
                 }

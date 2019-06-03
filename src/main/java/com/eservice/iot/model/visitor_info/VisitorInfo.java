@@ -47,14 +47,14 @@ public class VisitorInfo {
      * 访问开始时间
      */
     @Column(name = "visit_start_time")
-    @DateTimeFormat(pattern="yyyy-MM-dd")
+    @JsonFormat(pattern="yyyy-MM-dd HH:mm:ss",timezone = "GMT+8")
     private Date visitStartTime;
 
     /**
      * 访问结束时间
      */
     @Column(name = "visit_end_time")
-    @DateTimeFormat(pattern="yyyy-MM-dd")
+    @JsonFormat(pattern="yyyy-MM-dd HH:mm:ss",timezone = "GMT+8")
     private Date visitEndTime;
 
     /**
@@ -66,14 +66,14 @@ public class VisitorInfo {
      * 记录创建时间
      */
     @Column(name = "create_time")
-    @DateTimeFormat(pattern="yyyy-MM-dd")
+    @JsonFormat(pattern="yyyy-MM-dd HH:mm:ss",timezone = "GMT+8")
     private Date createTime;
 
     /**
      * 更新时间
      */
     @Column(name = "update_time")
-    @DateTimeFormat(pattern="yyyy-MM-dd")
+    @JsonFormat(pattern="yyyy-MM-dd HH:mm:ss",timezone = "GMT+8")
     private Date updateTime;
 
     /**
@@ -81,6 +81,12 @@ public class VisitorInfo {
      */
     @Column(name = "staff_id")
     private String staffId;
+
+    /**
+     * 用于标识迁出id
+     */
+    @Column(name = "visitor_id")
+    private String visitorId;
 
     /**
      * 照片base64数据
@@ -206,7 +212,6 @@ public class VisitorInfo {
      *
      * @return visit_start_time - 访问开始时间
      */
-    @JsonFormat(timezone = "GMT+8", pattern = "yyyy-MM-dd HH:mm")
     public Date getVisitStartTime() {
         return visitStartTime;
     }
@@ -225,7 +230,6 @@ public class VisitorInfo {
      *
      * @return visit_end_time - 访问结束时间
      */
-    @JsonFormat(timezone = "GMT+8", pattern = "yyyy-MM-dd HH:mm")
     public Date getVisitEndTime() {
         return visitEndTime;
     }
@@ -262,7 +266,6 @@ public class VisitorInfo {
      *
      * @return create_time - 记录创建时间
      */
-    @JsonFormat(timezone = "GMT+8", pattern = "yyyy-MM-dd HH:mm")
     public Date getCreateTime() {
         return createTime;
     }
@@ -281,7 +284,6 @@ public class VisitorInfo {
      *
      * @return update_time - 更新时间
      */
-    @JsonFormat(timezone = "GMT+8", pattern = "yyyy-MM-dd HH:mm")
     public Date getUpdateTime() {
         return updateTime;
     }
@@ -311,6 +313,24 @@ public class VisitorInfo {
      */
     public void setStaffId(String staffId) {
         this.staffId = staffId;
+    }
+
+    /**
+     * 获取用于标识迁出id
+     *
+     * @return visitor_id - 用于标识迁出id
+     */
+    public String getVisitorId() {
+        return visitorId;
+    }
+
+    /**
+     * 设置用于标识迁出id
+     *
+     * @param visitorId 用于标识迁出id
+     */
+    public void setVisitorId(String visitorId) {
+        this.visitorId = visitorId;
     }
 
     /**

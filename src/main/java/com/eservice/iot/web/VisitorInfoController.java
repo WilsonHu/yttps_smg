@@ -64,15 +64,14 @@ public class VisitorInfoController {
     @Autowired
     private RestTemplate restTemplate;
 
+    @Value("${smg_base_url}")
+    private String SMG_BASE_URL;
 
     @PostMapping("/add")
     public Result add(@RequestBody @NotNull VisitorInfo visitorInfo) {
         //检查照片质量
         if(visitorInfo.getPhotoData() == null || "".equals(visitorInfo.getPhotoData()))  {
             return ResultGenerator.genFailResult("照片不能为空！");
-        }
-        if(imageQualityVerify.verify(visitorInfo.getPhotoData())){
-            return ResultGenerator.genFailResult("照片不符合要求！");
         }
         visitorInfo.setId(Util.getUUIDForDB());
         try {
